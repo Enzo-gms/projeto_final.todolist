@@ -1,0 +1,444 @@
+#(model/tarefa.py)
+
+from sqlalchemy import Column, Integer, String, Boolean
+from sqlalchemy.orm import declarative_base
+from connection import engine  # Importar a conexão
+
+# Criar a base declarativa
+Base = declarative_base()
+
+# Definir o modelo da tabela
+class Tarefa(Base):
+    __tablename__ = "tb_tarefa"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    descricao = Column(String(255), nullable=False)
+    status = Column(Boolean, default=False)
+
+# Criar a tabela no banco de dados (caso ainda não exista)
+Base.metadata.create_all(engine)
+
+
+#(sevices/service.py)
+
+from sqlalchemy.orm import Session
+from connection import SessaoLocal 
+from model.tarefa import Tarefa  
+
+
+# Criar uma nova tarefa no banco de dados
+def criar_tarefa(descricao: str):
+    sessao = SessaoLocal()
+    nova_tarefa = Tarefa(descricao=descricao, status=False)
+    sessao.add(nova_tarefa)
+    sessao.commit()
+    sessao.refresh(nova_tarefa)  # Atualiza com o ID gerado
+    sessao.close()
+    return nova_tarefa
+
+# Obter todas as tarefas do banco de dados
+def listar_tarefas():
+    sessao = SessaoLocal()
+    tarefas = sessao.query(Tarefa).all()
+    sessao.close()
+    return tarefas
+
+# Atualizar uma tarefa existente
+def editar_tarefa(tarefa_id: int, nova_descricao: str):
+    sessao = SessaoLocal()
+    tarefa = sessao.query(Tarefa).filter(Tarefa.id == tarefa_id).first()
+    if tarefa:
+        tarefa.descricao = nova_descricao
+        sessao.commit()
+    sessao.close()
+
+# Marcar tarefa como concluída/não concluída
+def alternar_status_tarefa(tarefa_id: int, concluida: bool):
+    sessao = SessaoLocal()
+    tarefa = sessao.query(Tarefa).filter(Tarefa.id == tarefa_id).first()
+    if tarefa:
+        tarefa.status = concluida
+        sessao.commit()
+    sessao.close()
+
+# Remover uma tarefa do banco de dados
+def deletar_tarefa(tarefa_id: int):
+    sessao = SessaoLocal()
+    tarefa = sessao.query(Tarefa).filter(Tarefa.id == tarefa_id).first()
+    if tarefa:
+        sessao.delete(tarefa)
+        sessao.commit()
+    sessao.close()
+
+
+
+#(view/interface)
+
+import flet as ft
+from services.service import (
+    criar_tarefa,
+    listar_tarefas,
+    editar_tarefa,
+    alternar_status_tarefa,
+    deletar_tarefa
+)
+
+class TarefaUI(ft.Row):
+    def __init__(self, tarefa_id, descricao, concluida, remover_callback, status_callback):
+        super().__init__()
+        self.tarefa_id = tarefa_id
+        self.status = concluida
+        self.texto_visivel = ft.Text(descricao)
+        self.campo_edicao = ft.TextField(descricao, visible=False)
+        self.checkbox = ft.Checkbox(value=concluida, on_change=self.alternar_status)
+        self.botao_editar = ft.IconButton(icon=ft.icons.EDIT, on_click=self.editar)
+        self.botao_salvar = ft.IconButton(visible=False, icon=ft.icons.SAVE, on_click=self.salvar)
+        self.botao_deletar = ft.IconButton(icon=ft.icons.DELETE, on_click=self.deletar)
+        self.remover_callback = remover_callback
+        self.status_callback = status_callback
+
+        self.controls = [
+            self.checkbox,
+            self.texto_visivel,
+            self.campo_edicao,
+            self.botao_editar,
+            self.botao_salvar,
+            self.botao_deletar,
+        ]
+
+    def editar(self, e):
+        self.botao_editar.visible = False
+        self.botao_salvar.visible = True
+        self.texto_visivel.visible = False
+        self.campo_edicao.visible = True
+        self.update()
+
+    def salvar(self, e):
+        editar_tarefa(self.tarefa_id, self.campo_edicao.value)
+        self.texto_visivel.value = self.campo_edicao.value
+        self.botao_editar.visible = True
+        self.botao_salvar.visible = False
+        self.texto_visivel.visible = True
+        self.campo_edicao.visible = False
+        self.update()
+
+    def alternar_status(self, e):
+        self.status = self.checkbox.value
+        alternar_status_tarefa(self.tarefa_id, self.status)
+        self.status_callback()
+        self.update()
+
+    def deletar(self, e):
+        deletar_tarefa(self.tarefa_id)
+        self.remover_callback(self)
+
+class ListaTarefas(ft.Column):
+    def __init__(self, page):
+        super().__init__()
+        self.page = page
+        self.page.title = "Lista de Tarefas"
+        
+        self.entrada_tarefa = ft.TextField(hint_text="O que precisa ser feito?", expand=True)
+        self.botao_adicionar = ft.ElevatedButton(text="Adicionar", on_click=self.adicionar_tarefa)
+        self.lista_tarefas = ft.Column()
+        self.tarefas_ativas = ft.Text("0 tarefas ativas")
+        self.botao_limpar_concluidas = ft.OutlinedButton(text="Limpar concluídas", on_click=self.limpar_concluidas, visible=False)
+        
+        self.filtro = ft.Tabs(
+            selected_index=0,
+            on_change=self.alterar_filtro,
+            tabs=[ft.Tab(text="all"), ft.Tab(text="active"), ft.Tab(text="completed")],
+        )
+
+        self.controls = [
+            self.entrada_tarefa,
+            self.botao_adicionar,
+            ft.Container(height=10),
+            self.filtro,
+            self.lista_tarefas,
+            ft.Row(
+                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[
+                    self.tarefas_ativas,
+                    self.botao_limpar_concluidas,
+                ],
+            ),
+        ]
+
+    def carregar_tarefas(self):
+        self.lista_tarefas.controls.clear()
+        for tarefa in listar_tarefas():
+            self.lista_tarefas.controls.append(
+                TarefaUI(tarefa.id, tarefa.descricao, tarefa.status, self.remover_tarefa, self.atualizar_status)
+            )
+        self.atualizar_status()
+        self.update()
+
+    def adicionar_tarefa(self, e):
+        if self.entrada_tarefa.value.strip():
+            nova_tarefa = criar_tarefa(self.entrada_tarefa.value)
+            self.lista_tarefas.controls.append(
+                TarefaUI(nova_tarefa.id, nova_tarefa.descricao, nova_tarefa.status, self.remover_tarefa, self.atualizar_status)
+            )
+            self.entrada_tarefa.value = ""
+            self.atualizar_status()
+            self.update()
+
+    def remover_tarefa(self, tarefa):
+        self.lista_tarefas.controls.remove(tarefa)
+        deletar_tarefa(tarefa.tarefa_id)
+        self.atualizar_status()
+        self.update()
+
+    def limpar_concluidas(self, e):
+        for tarefa in self.lista_tarefas.controls[:]:
+            if tarefa.status:
+                self.remover_tarefa(tarefa)
+        self.update()
+
+
+    def atualizar_status(self):
+        if not self.page:
+            return  # Evita erro de atualização antes da página estar configurada
+        
+        status = self.filtro.tabs[self.filtro.selected_index].text
+        count = 0
+        for tarefa in self.lista_tarefas.controls:
+            tarefa.visible = (
+                status == "all"
+                or (status == "active" and not tarefa.status)
+                or (status == "completed" and tarefa.status)
+            )
+            if not tarefa.status:
+                count += 1
+        self.tarefas_ativas.value = f"{count} tarefa(s) ativa(s)"
+        self.botao_limpar_concluidas.visible = status == "completed"
+        self.update()
+
+    def alterar_filtro(self, e):
+        self.atualizar_status()
+
+class PaginaPesquisa(ft.Column):
+    def __init__(self, page):
+        super().__init__()
+        self.page = page
+        self.entrada_pesquisa = ft.TextField(
+            hint_text="Pesquisar por ID ou Descrição",
+            expand=True,
+            on_change=self.pesquisar_tarefa  # Pesquisa em tempo real
+        )
+        self.botao_pesquisar = ft.IconButton(icon=ft.icons.SEARCH, on_click=self.pesquisar_tarefa)
+
+        self.tabela_tarefas = ft.DataTable(
+            columns=[
+                ft.DataColumn(ft.Text("ID")),
+                ft.DataColumn(ft.Text("Descrição")),
+                ft.DataColumn(ft.Text("Status"))
+            ],
+            rows=[]
+        )
+
+        self.controls = [
+            ft.Row([self.entrada_pesquisa, self.botao_pesquisar]),
+            self.tabela_tarefas,
+        ]
+
+        # Carregar todas as tarefas ao iniciar a tela
+        self.carregar_tarefas()
+
+    def carregar_tarefas(self):
+        """Carrega todas as tarefas na tabela ao abrir a página."""
+        self.tabela_tarefas.rows.clear()
+        for tarefa in listar_tarefas():
+            self.tabela_tarefas.rows.append(ft.DataRow(
+                cells=[
+                    ft.DataCell(ft.Text(str(tarefa.id))),
+                    ft.DataCell(ft.Text(tarefa.descricao)),
+                    ft.DataCell(ft.Text("Feito" if tarefa.status else "Pendente"))
+                ]
+            ))
+        self.update()
+
+    def pesquisar_tarefa(self, e=None):
+        """Filtra as tarefas baseadas no termo de pesquisa (em tempo real)."""
+        termo = self.entrada_pesquisa.value.lower().strip()
+        self.tabela_tarefas.rows.clear()
+        
+        for tarefa in listar_tarefas():
+            if termo in str(tarefa.id) or termo in tarefa.descricao.lower():
+                self.tabela_tarefas.rows.append(ft.DataRow(
+                    cells=[
+                        ft.DataCell(ft.Text(str(tarefa.id))),
+                        ft.DataCell(ft.Text(tarefa.descricao)),
+                        ft.DataCell(ft.Text("Feito" if tarefa.status else "Pendente"))
+                    ]
+                ))
+        self.update()
+
+
+
+def carregar_interface(page: ft.Page):
+    def mudar_pagina(e):
+        """Navega entre as páginas usando `page.go()`."""
+        if page.navigation_bar.selected_index == 0:
+            page.go("/")
+        else:
+            page.go("/pesquisa")
+
+    def on_route_change(e):
+        """Atualiza a interface ao mudar de rota."""
+        page.views.clear()
+        page.views.append(ft.View("/", controls=[page.navigation_bar]))  # Mantém a barra de navegação
+
+        if page.route == "/":
+            page.views.append(ft.View("Lista de Tarefas", [ListaTarefas(page)]))
+        elif page.route == "/pesquisa":
+            page.views.append(ft.View("Pesquisa", [PaginaPesquisa(page)]))
+
+        page.update()
+
+    page.on_route_change = on_route_change
+    page.navigation_bar = ft.NavigationBar(
+        destinations=[
+            ft.NavigationBarDestination(icon=ft.icons.LIST, label="Tarefas"),
+            ft.NavigationBarDestination(icon=ft.icons.SEARCH, label="Pesquisa"),
+        ],
+        on_change=mudar_pagina
+    )
+    page.go("/")
+
+
+
+#(connection.py)
+
+import os
+from dotenv import load_dotenv
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+# Carregar variáveis do .env
+load_dotenv()
+
+# Obter credenciais do banco de dados
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+DB_HOST = os.getenv("DB_HOST")
+DB_NAME = os.getenv("DB_NAME")
+
+# Criar URL de conexão com MySQL
+DB_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}/{DB_NAME}"
+
+# Criar a engine do SQLAlchemy
+engine = create_engine(DB_URL)
+
+try:
+    with engine.connect() as conn:
+        print('Conectado!')
+except Exception as ex:
+    print('Não conectado!')
+
+# Criar sessão para interagir com o banco de dados
+SessaoLocal = sessionmaker(bind=engine)
+
+
+
+#(main.py)
+
+import flet as ft
+from view.interface import carregar_interface
+
+def main(page: ft.Page):
+    carregar_interface(page)
+
+ft.app(target=main)
+
+
+
+#correção??????:
+
+# connection.py
+import os
+from dotenv import load_dotenv
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+load_dotenv()
+
+DB_USER = os.getenv("DB_USER", "root")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "")
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_NAME = os.getenv("DB_NAME", "tarefas_db")
+
+DB_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}/{DB_NAME}"
+engine = create_engine(DB_URL, echo=True)
+
+try:
+    with engine.connect() as conn:
+        print("Conectado ao banco de dados!")
+except Exception as ex:
+    print(f"Erro ao conectar: {ex}")
+
+SessaoLocal = sessionmaker(bind=engine)
+
+# model/tarefa.py
+from sqlalchemy import Column, Integer, String, Boolean
+from sqlalchemy.orm import declarative_base
+from connection import engine
+
+Base = declarative_base()
+
+class Tarefa(Base):
+    __tablename__ = "tb_tarefa"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    descricao = Column(String(255), nullable=False)
+    status = Column(Boolean, default=False)
+
+Base.metadata.create_all(engine)
+
+# services/service.py
+from sqlalchemy.orm import Session
+from connection import SessaoLocal
+from model.tarefa import Tarefa
+
+def criar_tarefa(descricao: str):
+    with SessaoLocal() as sessao:
+        nova_tarefa = Tarefa(descricao=descricao, status=False)
+        sessao.add(nova_tarefa)
+        sessao.commit()
+        sessao.refresh(nova_tarefa)
+        return nova_tarefa
+
+def listar_tarefas():
+    with SessaoLocal() as sessao:
+        return sessao.query(Tarefa).all()
+
+def editar_tarefa(tarefa_id: int, nova_descricao: str):
+    with SessaoLocal() as sessao:
+        tarefa = sessao.query(Tarefa).filter_by(id=tarefa_id).first()
+        if tarefa:
+            tarefa.descricao = nova_descricao
+            sessao.commit()
+
+def alternar_status_tarefa(tarefa_id: int, concluida: bool):
+    with SessaoLocal() as sessao:
+        tarefa = sessao.query(Tarefa).filter_by(id=tarefa_id).first()
+        if tarefa:
+            tarefa.status = concluida
+            sessao.commit()
+
+def deletar_tarefa(tarefa_id: int):
+    with SessaoLocal() as sessao:
+        tarefa = sessao.query(Tarefa).filter_by(id=tarefa_id).first()
+        if tarefa:
+            sessao.delete(tarefa)
+            sessao.commit()
+
+# main.py
+import flet as ft
+from view.interface import carregar_interface
+
+def main(page: ft.Page):
+    carregar_interface(page)
+
+ft.app(target=main, view=ft.WEB_BROWSER)

@@ -1,0 +1,4 @@
+criar banco de dados:
+
+	mysql -u root -p
+	create database gerenciador_tarefa;
