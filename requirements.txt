@@ -5,6 +5,7 @@ python-dotenv==1.0.1
 
 
 # para inatalar o requirements:
+# deactivate
 #   pip install -r requirements.txt
 
 
@@ -16,3 +17,22 @@ python-dotenv==1.0.1
 
 # para rodar o codigo:
 #   python src/main.py
+
+#na web:
+#flet run src/main.py --web
+#flet src/main.py --web  
+
+#no celular:
+#flet run src/main.py --android
+#flet src/main.py --android
+
+
+#oque falta:
+
+# scroll
+# margem
+# tabela
+# alterar tema
+# pagina responsiva
+# simulador movel
+

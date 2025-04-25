@@ -1,48 +1,82 @@
+
 from sqlalchemy.orm import Session
-from connection import SessaoLocal 
-from model.tarefa import Tarefa  
+from model.tarefa import Tarefa, PrioridadeEnum, ClasseEnum
+from connection import SessaoLocal
+from datetime import datetime, timedelta
 
+def validar_tarefa(nome, classe, data_inicio, data_entrega):
+    if not nome or not classe:
+        raise ValueError("Nome e Classe são obrigatórios.")
+    if data_entrega < data_inicio:
+        raise ValueError("Data de entrega não pode ser anterior ao início.")
 
-# Criar uma nova tarefa no banco de dados
-def criar_tarefa(descricao: str):
+def criar_tarefa(nome, classe, prioridade='media', data_inicio=None, data_entrega=None, descricao=None,):
     sessao = SessaoLocal()
-    nova_tarefa = Tarefa(descricao=descricao, status=False)
-    sessao.add(nova_tarefa)
-    sessao.commit()
-    sessao.refresh(nova_tarefa)  # Atualiza com o ID gerado
-    sessao.close()
-    return nova_tarefa
+    try:
+        if not data_inicio:
+            data_inicio = datetime.now()
+        if not data_entrega:
+            data_entrega = data_inicio.replace(hour=23, minute=59) + timedelta(days=1)
+        validar_tarefa(nome, classe, data_inicio, data_entrega)
+        nova_tarefa = Tarefa(
+            nome=nome,
+            classe=ClasseEnum(classe),
+            prioridade=PrioridadeEnum(prioridade),
+            data_inicio=data_inicio,
+            data_entrega=data_entrega,
+            descricao=descricao,
+            status=False
+        )
+        sessao.add(nova_tarefa)
+        sessao.commit()
+        sessao.refresh(nova_tarefa)
+        return nova_tarefa
+    except Exception as e:
+        sessao.rollback()
+        raise e
+    finally:
+        sessao.close()
 
-# Obter todas as tarefas do banco de dados
 def listar_tarefas():
     sessao = SessaoLocal()
-    tarefas = sessao.query(Tarefa).all()
-    sessao.close()
-    return tarefas
+    try:
+        tarefas = sessao.query(Tarefa).order_by(Tarefa.prioridade.desc(), Tarefa.data_entrega.asc()).all()
+        return tarefas
+    finally:
+        sessao.close()
 
-# Atualizar uma tarefa existente
-def editar_tarefa(tarefa_id: int, nova_descricao: str):
+def editar_tarefa(tarefa_id, nome, classe, prioridade, data_inicio, data_entrega, descricao,):
     sessao = SessaoLocal()
-    tarefa = sessao.query(Tarefa).filter(Tarefa.id == tarefa_id).first()
-    if tarefa:
-        tarefa.descricao = nova_descricao
-        sessao.commit()
-    sessao.close()
+    try:
+        tarefa = sessao.query(Tarefa).filter(Tarefa.id == tarefa_id).first()
+        if tarefa:
+            validar_tarefa(nome, classe, data_inicio, data_entrega)
+            tarefa.nome = nome
+            tarefa.classe = ClasseEnum(classe)
+            tarefa.prioridade = PrioridadeEnum(prioridade)
+            tarefa.data_inicio = data_inicio
+            tarefa.data_entrega = data_entrega
+            tarefa.descricao = descricao
+            sessao.commit()
+    finally:
+        sessao.close()
 
-# Marcar tarefa como concluída/não concluída
-def alternar_status_tarefa(tarefa_id: int, concluida: bool):
+def alternar_status_tarefa(tarefa_id, concluida):
     sessao = SessaoLocal()
-    tarefa = sessao.query(Tarefa).filter(Tarefa.id == tarefa_id).first()
-    if tarefa:
-        tarefa.status = concluida
-        sessao.commit()
-    sessao.close()
+    try:
+        tarefa = sessao.query(Tarefa).filter(Tarefa.id == tarefa_id).first()
+        if tarefa:
+            tarefa.status = concluida
+            sessao.commit()
+    finally:
+        sessao.close()
 
-# Remover uma tarefa do banco de dados
-def deletar_tarefa(tarefa_id: int):
+def deletar_tarefa(tarefa_id):
     sessao = SessaoLocal()
-    tarefa = sessao.query(Tarefa).filter(Tarefa.id == tarefa_id).first()
-    if tarefa:
-        sessao.delete(tarefa)
-        sessao.commit()
-    sessao.close()
+    try:
+        tarefa = sessao.query(Tarefa).filter(Tarefa.id == tarefa_id).first()
+        if tarefa:
+            sessao.delete(tarefa)
+            sessao.commit()
+    finally:
+        sessao.close()

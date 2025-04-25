@@ -22,7 +22,7 @@ try:
     with engine.connect() as conn:
         print('Conectado!')
 except Exception as ex:
-    print(f'Não conectado!, {ex}')
+    print('Não conectado!')
 
 # Criar sessão para interagir com o banco de dados
 SessaoLocal = sessionmaker(bind=engine)
