@@ -1,5 +1,4 @@
 import flet as ft
-import threading
 from datetime import datetime, timedelta
 from services.service import criar_tarefa, listar_tarefas, editar_tarefa, alternar_status_tarefa, deletar_tarefa
 
@@ -249,6 +248,8 @@ class ListaTarefas(ft.Column):
         self.filtro_prioridade.value = "todas"
         self.filtro_status.selected_index = 0
         self.filtrar_tarefas()
+        self.page.drawer.open = False
+        self.page.update()
 
 
     def mudar_tema(self, e):
@@ -272,13 +273,15 @@ class ListaTarefas(ft.Column):
             label="Classe da tarefa",
             value=tarefa.classe.value,
             options=[ft.dropdown.Option(c, c.capitalize()) for c in ["saude", "casa", "trabalho", "lazer"]],
+            expand=True,
         )
         campo_prioridade = ft.Dropdown(
             label="Prioridade",
             value=tarefa.prioridade.value,
             options=[ft.dropdown.Option(p, p.capitalize()) for p in ["alta", "media", "baixa"]],
+            expand=True,
         )
-        campo_descricao = ft.TextField(label="Descrição detalhada", value=tarefa.descricao, multiline=True)
+        campo_descricao = ft.TextField(label="Descrição detalhada", value=tarefa.descricao, multiline=True,expand=True,)
 
         # 🗓️ Inicializar datas
         data_inicio = tarefa.data_inicio
@@ -311,8 +314,8 @@ class ListaTarefas(ft.Column):
 
         self.calendario.on_change = definir_data  # Conecta DatePicker ao diálogo de edição
 
-        btn_inicio.on_click = lambda e: abrir_calendario("inicio")
-        btn_entrega.on_click = lambda e: abrir_calendario("entrega")
+        btn_inicio.on_click = lambda e: abrir_calendario("inicio",expand=True,)
+        btn_entrega.on_click = lambda e: abrir_calendario("entrega",expand=True,)
         atualizar_texto_data()
 
         def salvar_edicao(e):
@@ -337,10 +340,10 @@ class ListaTarefas(ft.Column):
             title=ft.Text("Editar Tarefa"),
             content=ft.Column([
                 campo_nome,
-                 ft.Row([campo_classe,campo_prioridade]),
-                ft.Row([btn_inicio, btn_entrega]),
+                 ft.Row([campo_classe,campo_prioridade],expand=True),
+                ft.Row([btn_inicio, btn_entrega],expand=True),
                 campo_descricao
-            ], scroll="auto"),
+            ],expand=True, scroll="auto"),
             actions=[
                 ft.TextButton("Cancelar", on_click=lambda e: self.fechar_dialogo()),
                 ft.TextButton("Salvar", on_click=salvar_edicao)
@@ -367,7 +370,6 @@ class ListaTarefas(ft.Column):
         hoje = agora.date()
         fim_da_semana = hoje + timedelta(days=(6 - hoje.weekday()))
 
-        count_ativas = 0
 
         for tarefa in listar_tarefas():
             # Exibir tarefas agendadas apenas no filtro "ativas"
@@ -405,7 +407,6 @@ class ListaTarefas(ft.Column):
 
             # Tarefas ativas separadas por data
             if status == "ativas":
-                count_ativas += 1
                 self.lista_tarefas.visible = False
                 if tarefa.data_entrega.date() == hoje:
                     self.tarefas_hoje.controls.append(ui)
@@ -420,7 +421,8 @@ class ListaTarefas(ft.Column):
                 self.lista_tarefas.controls.append(ui)
 
         # Atualiza o texto de tarefas ativas
-        self.tarefas_ativas.value = f"{count_ativas} tarefa(s) ativa(s)"
+        total_ativas = sum(1 for t in listar_tarefas() if not t.status)
+        self.tarefas_ativas.value = f"{total_ativas} tarefa(s) ativa(s)"
         self.botao_limpar_concluidas.visible = (status == "completas" and len(self.lista_tarefas.controls) > 0)
         self.page.update()
 
@@ -451,6 +453,7 @@ class ListaTarefas(ft.Column):
         self.secao_hoje.visible = False
         self.secao_semana.visible = False
         self.secao_depois.visible = False
+        self.page.drawer.open = False
         self.page.update()
 
 
@@ -495,11 +498,13 @@ class ListaTarefas(ft.Column):
         self.data_entrega = self.data_inicio + timedelta(days=1)
         self.botao_data_inicio = ft.TextButton(
             text=f"Data de início: {self.data_inicio.strftime('%d/%m/%Y')}",
-            on_click=lambda e: self.abrir_calendario("inicio")
+            on_click=lambda e: self.abrir_calendario("inicio"),
+            expand=True,
         )
         self.botao_data_entrega = ft.TextButton(
             text=f"Data de entrega: {self.data_entrega.strftime('%d/%m/%Y')}",
-            on_click=lambda e: self.abrir_calendario("entrega")
+            on_click=lambda e: self.abrir_calendario("entrega"),
+            expand=True,
         )
         # 🟨 3. Descrição detalhada
         self.campo_descricao = ft.TextField(
