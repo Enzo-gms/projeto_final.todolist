@@ -98,7 +98,6 @@ class TarefaUI(ft.Row):
                 ft.TextButton("Fechar", on_click=lambda e: self.fechar_dialogo())
             ],
             modal=False,  # Não modal
-            expand=True
         )
 
         # Exibir o diálogo
@@ -314,9 +313,17 @@ class ListaTarefas(ft.Column):
 
         self.calendario.on_change = definir_data  # Conecta DatePicker ao diálogo de edição
 
-        btn_inicio.on_click = lambda e: abrir_calendario("inicio",expand=True,)
-        btn_entrega.on_click = lambda e: abrir_calendario("entrega",expand=True,)
+        btn_inicio.on_click = lambda e: abrir_calendario("inicio")
+        btn_entrega.on_click = lambda e: abrir_calendario("entrega")
         atualizar_texto_data()
+
+        layout_datas = ft.Row(
+            controls=[
+                ft.Container(content=btn_inicio, expand=True),  # Botão de início expansível
+                ft.Container(content=btn_entrega, expand=True),  # Botão de entrega expansível
+            ],
+            expand=True,  # A linha ocupa todo o espaço disponível
+        )
 
         def salvar_edicao(e):
             editar_tarefa(
@@ -340,8 +347,8 @@ class ListaTarefas(ft.Column):
             title=ft.Text("Editar Tarefa"),
             content=ft.Column([
                 campo_nome,
-                 ft.Row([campo_classe,campo_prioridade],expand=True),
-                ft.Row([btn_inicio, btn_entrega],expand=True),
+                ft.Row([campo_classe,campo_prioridade],expand=True),
+                layout_datas,
                 campo_descricao
             ],expand=True, scroll="auto"),
             actions=[
